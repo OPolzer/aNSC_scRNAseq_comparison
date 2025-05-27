@@ -1,0 +1,433 @@
+---
+title: "Figure 3"
+author: "Oliver Polzer"
+date: "2025-05-27"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE)
+```
+
+### 1. Background
+
+The following analysis was carried out based on two publicly available datasets  
+1.[Harris et al., 2021](https://doi.org/10.1016/j.stem.2021.01.003)  
+[Generation of the Seurat object + pseudotime values from Harris et al.](https://github.com/harrislachlan/lifelong_stemcells/tree/main/markdown)  
+2.[Shin et al., 2015](https://doi.org/10.1016/j.stem.2015.07.013)   
+
+In order to generate these figures the seurat object from Harris et al. needs to be generated (according to original markdown document, see link above).  
+
+This reproducible and dynamic report was created using Rmarkdown and the [Knitr package](https://yihui.name/knitr/), and summarizes the basic code and outputs (plots, tables, etc).  
+
+
+
+***
+### Figure 3 A - D
+
+```{r Pseudotime Shin Harris, eval = FALSE}
+##Load packages----
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(ggpubr)
+library(ggdist)
+library(ggforce)
+library(xtable)
+library(ggthemes)
+
+# Specify the path to your Excel file of both pseudotime trajectories----
+# Pseudotime values from Shin et al. can be found in the original paper or in the GitHub repository
+# Pseudotime values from Harris et al. need to be generated using the pipeline from the original paper
+excel_file_shin <- "YourDirectory/Shin_Pseudotime_all_genes.xlsx"
+excel_file_harris <- "YourDirectory/Harris_Pseudotime_all_genes.csv"
+
+# Read the Excel file into a data frame----
+data_shin <- read_excel(excel_file_shin)
+colnames(data_shin)[1] <- "GeneName"
+data_shin_df <- data.frame(data_shin) 
+
+data_shin_df2 <- data_shin_df[,-1]
+rownames(data_shin_df2) <- data_shin_df[,1]
+
+data_harris <- read.csv(excel_file_harris)
+colnames(data_harris)[1] <- "GeneName"
+data_harris_df <- data.frame(data_harris)
+
+data_harris_df2 <- data_harris_df[,-1]
+rownames(data_harris_df2) <- data_harris_df[,1]
+# Remove the row with the name "age"
+data_harris_df2 <- data_harris_df2[rownames(data_harris_df2) != "quiescence", ]
+data_harris_df2 <- data_harris_df2[rownames(data_harris_df2) != "...1", ]
+
+
+# all gene lists of NSC populations from selected studies ----
+
+# Define the studies you want to process and their corresponding gene list files----
+# Example here are all population with NSC characteristics (Figure 3 A and C)
+# For Figure 3 B and D please use the respective populations
+
+studies <- c("Artegiani_NSC","Batiuk_AST4","Bielefeld_A1", "Harris_NSC","Hochgerner_RGL", "Wu_qNSC","Shin_NSC", "Overlap_NSC")
+files <- paste0(studies, ".txt")  # assuming files are named like "Shin_NSC.txt", etc.
+
+# Read gene lists into a named list
+gene_lists <- setNames(lapply(files, readLines), studies)
+
+# Helper function to filter data based on a gene list
+filter_data <- function(data_df, gene_list) {
+  df <- data_df[rownames(data_df) %in% gene_list, ]
+  # Convert character columns to numeric if needed
+  df <- dplyr::mutate_if(df, is.character, as.numeric)
+  return(df)
+}
+
+# For each study, filter both the Shin and Harris datasets,
+# compute column means, combine with x-values, and z-score normalize
+process_study <- function(study, data_shin, data_harris, x_shin, x_harris) {
+  # Filter data for the given gene list
+  fs <- filter_data(data_shin, gene_lists[[study]])
+  fh <- filter_data(data_harris, gene_lists[[study]])
+  
+  # Calculate column means
+  mean_s <- colMeans(fs)
+  mean_h <- colMeans(fh)
+  
+  # Combine with x-values (assuming Pseudotime is in these data frames)
+  plot_s <- cbind(x_shin, mean = mean_s)
+  plot_h <- cbind(x_harris, mean = mean_h)
+  
+  # Z-score normalization
+  plot_s$zscore <- as.numeric(scale(plot_s$mean))
+  plot_h$zscore <- as.numeric(scale(plot_h$mean))
+  
+  # Add a dataset column (prefixing with "s_" for Shin)
+  plot_s$dataset <- paste0("s_", study)
+  plot_h$dataset <- paste0("h_", study)
+  
+  # Return both datasets as a list 
+  return(list(shin = plot_s, harris = plot_h))
+}
+
+# Create x-values from your data (modify row index as appropriate)
+x_values_s <- as.data.frame(t(data_shin_df2[1, ]))
+x_values_h <- as.data.frame(t(data_harris_df2[1, ])) %>% 
+  dplyr::mutate_if(is.character, as.numeric)
+
+# Process each study and combine Shin and Harris results
+result_list <- lapply(studies, process_study, data_shin = data_shin_df2, 
+                      data_harris = data_harris_df2, 
+                      x_shin = x_values_s, x_harris = x_values_h)
+names(result_list) <- studies
+
+
+# Extract and combine the Shin datasets
+plot_data_s_combined <- do.call(rbind, lapply(result_list, function(x) {
+  # Keep only relevant columns and assume "Pseudotime" is a column in x_shin
+  x$shin[, c("Pseudotime","mean", "zscore", "dataset")]
+}))
+
+# Extract and combine the Harris datasets
+plot_data_h_combined <- do.call(rbind, lapply(result_list, function(x) {
+  x$harris[, c("Lineage1","mean", "zscore", "dataset")]
+}))
+
+#Plot graphs----
+
+# Generate the plot for Shin dataset
+s_combined_plot <- ggplot(plot_data_s_combined, aes(x = Pseudotime, y = plot_data_s_combined$zscore, color = dataset)) +
+  geom_point(size = 1, alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(
+    x = "Pseudotime",
+    y = "Mean gene expression levels",
+    title = "NSC Gene Expression Across Pseudotime"
+  ) +
+  theme_tufte(base_family = "Arial") +
+  theme(
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 14),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  ) +
+  xlim(0, 1) +
+  ylim(-2, 2)
+
+print(s_combined_plot)
+
+
+# Generate the plot for Harris dataset
+h_combined_plot <- ggplot(plot_data_h_combined, aes(x = Lineage1, y = plot_data_h_combined$zscore, color = dataset)) +
+  geom_point(size = 1, alpha = 0.2) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(
+    x = "Pseudotime",
+    y = "Mean gene expression levels",
+    title = "NSC Gene Expression Across Pseudotime (Harris)"
+  ) +
+  theme_tufte(base_family = "Arial") +
+  theme(
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 14),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  ) +
+  xlim(0, 20) +
+  ylim(-1, 5)
+
+# Print the plot
+print(h_combined_plot)
+
+```
+
+***
+### Figure 3 E and F
+
+```{r Pseudotime Harris, eval = FALSE}
+
+# Load packages----
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readxl)
+
+
+# Read the Shin Excel File and Prepare the Data
+excel_file_shin <- "YourDirectory/Shin_Pseudotime_all_genes.xlsx"
+
+# Read the Excel file; assumes first column contains gene names
+data_shin <- read_excel(excel_file_shin)
+data_shin_df <- data.frame(data_shin) %>%
+  rename(GeneName = 1)
+
+# Remove the first column (now stored in GeneName) and set row names to gene names
+data_shin_df2 <- data_shin_df[,-1]
+rownames(data_shin_df2) <- data_shin_df[,1]
+
+
+# Extract Pseudotime and Gene Expression Data----
+
+# Assume one row is named "Pseudotime" (with pseudotime values for each sample)
+# Extract the pseudotime vector and remove that row from the data
+pseudotime <- as.numeric(data_shin_df2["Pseudotime", ])
+data_shin_genes <- data_shin_df2[rownames(data_shin_df2) != "Pseudotime", ]
+
+
+# Convert Wide Data to Long Format
+
+# Before pivoting, create a data frame mapping Sample names to Pseudotime.
+# Here, column names (except "Pseudotime") are assumed to be the sample IDs.
+pseudotime_df <- data.frame(
+  Sample = colnames(data_shin_df2)[colnames(data_shin_df2) != "Pseudotime"],
+  Pseudotime = pseudotime,
+  stringsAsFactors = FALSE
+)
+
+# Add a column "Gene" to the gene expression data using row names
+data_shin_genes$Gene <- rownames(data_shin_genes)
+
+# Pivot from wide to long format: each row is a gene-sample combination
+data_shin_long <- data_shin_genes %>%
+  pivot_longer(
+    cols = -Gene,            # all columns except "Gene"
+    names_to = "Sample",     # new column for sample IDs
+    values_to = "Expression" # new column for expression values
+  )
+
+# Join the pseudotime information by matching Sample names
+data_shin_long <- left_join(data_shin_long, pseudotime_df, by = "Sample")
+
+
+# Filter for Selected Genes
+# add here the genes of interest
+selected_genes <- c("Apoe", "Ccnd2", "Ascl1", "Cdk6", "Ezh2", "Hmgb2", "Insm1", "Lmnb1", "Neurog2")
+
+data_shin_long_filtered <- data_shin_long %>%
+  filter(Gene %in% selected_genes)
+
+# Ensure the Expression column is numeric (in case it was read as character)
+data_shin_long_filtered$Expression <- as.numeric(data_shin_long_filtered$Expression)
+
+# Z-score Normalize the Expression Data
+
+# Z-score normalization of gene expression
+data_shin_long_filtered <- data_shin_long_filtered %>%
+  group_by(Gene) %>%
+  mutate(
+    ZScore_Expression = (Expression - mean(Expression, na.rm = TRUE)) / sd(Expression, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+# Plot Gene Expression vs. Pseudotime
+
+# Option A: All genes in one plot, colored by gene
+p_shin_all <- ggplot(data_shin_long_filtered, aes(x = Pseudotime, y = ZScore_Expression, color = Gene)) +
+  geom_smooth(method = "loess", se = TRUE, aes(fill = Gene), alpha = 0.3) +  # Shading for 95% CI
+  labs(
+    title = "Expression of Selected Genes vs. Pseudotime (Shin)",
+    x = "Pseudotime",
+    y = "Expression"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") +  # Optionally remove legend if too many genes
+  facet_wrap(~ Gene, scales = "free_y") +  # Create a separate panel for each gene
+  coord_cartesian(ylim = c(-2, 2))  # Set y-axis limits from -2 to 2
+
+print(p_shin_all)
+
+# Option B: Faceted plot (one panel per gene)
+p_shin_facet <- ggplot(data_shin_long_filtered, aes(x = Pseudotime, y = Expression)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "loess", se = FALSE, color = "red") +
+  facet_wrap(~ Gene, scales = "free_y") +
+  labs(
+    title = "Expression of Selected Genes vs. Pseudotime (Faceted)",
+    x = "Pseudotime",
+    y = "Expression"
+  ) +
+  theme_minimal()
+
+print(p_shin_facet)
+
+
+###For NSC signature##
+# 1. Load the gene list from the file
+selected_genes <- readLines("Overlap_NP.txt")
+
+# 2. Filter the data for the selected genes
+data_shin_long_filtered <- data_shin_long %>%
+  filter(Gene %in% selected_genes)
+
+# Ensure the Expression column is numeric (in case it was read as character)
+data_shin_long_filtered$Expression <- as.numeric(data_shin_long_filtered$Expression)
+
+# 3. Z-score normalize the Expression Data
+data_shin_long_filtered <- data_shin_long_filtered %>%
+  group_by(Gene) %>%
+  mutate(
+    ZScore_Expression = (Expression - mean(Expression, na.rm = TRUE)) / sd(Expression, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# 4. Calculate the average Z-score expression for the selected genes at each pseudotime point
+data_avg_expression <- data_shin_long_filtered %>%
+  group_by(Pseudotime, Sample) %>%
+  summarise(
+    Avg_ZScore_Expression = mean(ZScore_Expression, na.rm = TRUE)
+  )
+
+# 5. Plot the average expression (smoothed curve) for the selected genes
+p_shin_all_avg <- ggplot(data_avg_expression, aes(x = Pseudotime, y = Avg_ZScore_Expression)) +
+  geom_smooth(method = "loess", se = TRUE, aes(fill = "Average"), alpha = 0.3) +  # Shading for 95% CI
+  labs(
+    title = "Average Expression of Selected Genes vs. Pseudotime (Shin)",
+    x = "Pseudotime",
+    y = "Average Z-Score Expression"
+  ) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(-2, 2))  # Set y-axis limits from -2 to 2
+
+# Print the plot
+print(p_shin_all_avg)
+
+ggsave("2025-03-09_Pseudotime_NPsignature_plot_shin_all.svg", plot = p_shin_all_avg, device = "svg", width = 10, height = 8)
+
+
+
+
+```
+
+***
+### Figure 3 G
+
+```{r Geneoverlap with Wu}
+
+#Load necessary libraries----
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Define the dataset
+# Modules were extracted from Wu et al. and gene overlap was determined in Excel
+data <- data.frame(
+  Module = c("Module 1", "Module 2", "Module 3", "Module 4", "Not Included"),
+  NSC = c(49, 9, 0, 0, 0),  # NSC genes in each module + not included
+  NP = c(0, 2, 57, 0, 3),   # NP genes in each module + not included
+  NB = c(0, 0, 17, 61, 0)   # NB genes in each module + not included
+)
+
+# Define total number of genes per signature
+total_NSC <- sum(data$NSC)
+total_NP <- sum(data$NP)
+total_NB <- sum(data$NB)
+
+# Convert data to long format
+data_long <- data %>%
+  pivot_longer(cols = NSC:NB, names_to = "Signature", values_to = "Count")
+
+# Add total genes per signature and compute percentages
+data_long <- data_long %>%
+  mutate(Total_Signature = case_when(
+    Signature == "NSC" ~ total_NSC,
+    Signature == "NP" ~ total_NP,
+    Signature == "NB" ~ total_NB
+  )) %>%
+  mutate(Percentage = (Count / Total_Signature) * 100)
+
+# Separate "Not Included" category
+not_included <- data_long %>% filter(Module == "Not Included")
+data_long <- data_long %>% filter(Module != "Not Included")
+
+# Merge with "Not Included" to ensure each bar sums to 100%
+data_long <- data_long %>%
+  left_join(not_included %>% select(Signature, NotIncluded_Percentage = Percentage), by = "Signature") %>%
+  mutate(NotIncluded_Percentage = ifelse(is.na(NotIncluded_Percentage), 0, NotIncluded_Percentage)) %>%
+  mutate(Present_Percentage = Percentage, # Renaming for clarity
+         Remaining_Percentage = 100 - Present_Percentage) %>%
+  select(Module, Signature, Present_Percentage, Remaining_Percentage)
+
+# Convert back to long format for plotting
+data_long <- data_long %>%
+  pivot_longer(cols = c(Present_Percentage, Remaining_Percentage),
+               names_to = "Category", values_to = "Percentage")
+
+# Ensure Signature order (NSC → NP → NB)
+data_long$Signature <- factor(data_long$Signature, levels = c("NSC", "NP", "NB"))
+
+# Ensure "Present_Percentage" is plotted first (on the bottom)
+data_long$Category <- factor(data_long$Category, levels = c("Present_Percentage", "Remaining_Percentage"))
+
+# Create a stacked bar plot where each signature sums to 100%, and signatures are side by side
+p <- ggplot(data_long, aes(x = Module, y = Percentage, fill = Category)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bars
+  facet_wrap(~ Signature, scales = "free_x") +  # Panel by Signature (NSC, NP, NB)
+  labs(title = "Signature Distribution Within Each Module (100% per Signature)",
+       x = "Module",
+       y = "Percentage (%)") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Remaining_Percentage" = "gray", "Present_Percentage" = "blue"),
+                    labels = c("Not Included", "Present")) +  # Fix legend labels
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("2025-02-27_GeneOverlap_modules_wuplot.svg", plot = p, device = "svg", width = 6, height = 4)
+
+```
+
