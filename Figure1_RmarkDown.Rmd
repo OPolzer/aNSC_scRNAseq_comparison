@@ -1,0 +1,281 @@
+---
+title: "Figure 1"
+author: "Oliver Polzer"
+date: "2025-05-27"
+output: 
+    html_document: 
+    toc: true
+    Toc_float: true
+---
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE)
+```
+
+### 1. Background
+
+The following analysis was carried out based on publicly available datasets  
+1.[Shin et al., 2015](https://doi.org/10.1016/j.stem.2015.07.013)   
+2.[Artegiani et al., 2017](https://doi.org/10.1016/j.celrep.2017.11.050)  
+3.[Hochgerner er al., 2018](https://doi.org/10.1038/s41593-017-0056-2)  
+4.[Batiuk et al., 2020](https://doi.org/10.1038/s41467-019-14198-8)  
+5.[Harris et al., 2021](https://doi.org/10.1016/j.stem.2021.01.003)  
+6.[Bielefeld et al., 2024 ](https://doi.org/10.1101/2023.03.04.531101)  
+7.[Wu et al., 2025](https://doi.org/10.1038/s41593-024-01848-4)  
+This reproducible and dynamic report was created using Rmarkdown and the [Knitr package](https://yihui.name/knitr/), and summarizes the basic code and outputs (plots, tables, etc).  
+
+Information regarding the separated studies can be found in Table 2 of the paper.
+
+
+***
+
+
+### 2. Figure 1
+
+#### Gene lists used to identify/characterize neural stem cells or neural progenitor cells were extracted from the studies above and used for hierarchical clustering using the hclust function based on the similiarity of genes across studies.
+
+```{r clustering}
+
+# Load necessary packages----
+library(dplyr)
+library(VennDiagram)
+library(gplots)
+library(dendextend)
+library(UpSetR)
+library(plotly)
+library(gridExtra)
+library("ggvenn")
+
+# For Figure 1 A
+# Read and store genes----
+# Set the path to the directory where your gene list files of are located
+# All gene lists can be found in the folder GeneLists in GitHub
+gene_list_dir <- "C:/Users/LucassenEDU/Desktop/R_code_rebuttal/GeneLists_NSC_NPC"
+
+# List all files in the directory
+gene_list_files <- list.files(gene_list_dir, pattern = ".txt", full.names = TRUE)
+
+# Read and store gene lists in a list of data frames
+gene_lists <- lapply(gene_list_files, function(file) {
+  # Extract the file name without extension
+  new_name <- tools::file_path_sans_ext(basename(file))
+  
+  # Read the gene list from the file
+  gene_list <- read.delim(file, header = FALSE, stringsAsFactors = FALSE)
+  
+  # Rename the gene list with the new name
+  names(gene_list) <- new_name
+  
+  # Return the gene list
+  gene_list
+})
+
+# Perform pairwise comparisons and store the results----
+pairwise_results <- list()
+
+for (i in 1:(length(gene_lists) - 1)) {
+  for (j in (i+1):length(gene_lists)) {
+    set1 <- gene_lists[[i]][[1]]
+    set2 <- gene_lists[[j]][[1]]
+    common_genes <- intersect(set1, set2)
+    pairwise_results[[paste0("Gene List", i, "_Gene List", j)]] <- common_genes
+  }
+}
+
+# Quantification of Similarity
+similarity_matrix <- matrix(0, nrow = length(gene_lists), ncol = length(gene_lists))
+
+for (i in 1:(length(gene_lists) - 1)) {
+  for (j in (i+1):length(gene_lists)) {
+    set1 <- gene_lists[[i]][[1]]
+    set2 <- gene_lists[[j]][[1]]
+    common_genes <- intersect(set1, set2)
+    similarity_matrix[i, j] <- length(common_genes)
+    similarity_matrix[j, i] <- length(common_genes)
+  }
+}
+
+# Print similarity matrix
+rownames(similarity_matrix) <- c("Artegiani_NP", "Artegiani_NSC", 
+                                 "Batiuk_AST4",
+                                  "Bielefeld_A1",
+                                 "Bielefeld_NSC1","Bielefeld_NSC2",
+                                "Bielefeld_RGL",
+                                 "Harris_Nb",
+                                 "Harris_NSC","Harris_NSC_IPCs",
+                                 "Hochgerner_Nb",
+                                 "Hochgerner_nIPC","Hochgerner_RGL",
+                                 "Shin_NSC",
+                                 "Wu_Nb",
+                                 "Wu_nIPC", "Wu_qNSC")
+
+colnames(similarity_matrix) <- c("Artegiani_NP", "Artegiani_NSC", 
+                                 "Batiuk_AST4",
+                                  "Bielefeld_A1",
+                                 "Bielefeld_NSC1","Bielefeld_NSC2",
+                                  "Bielefeld_RGL",
+                                 "Harris_Nb",
+                                 "Harris_NSC","Harris_NSC_IPCs",
+                                 "Hochgerner_Nb",
+                                 "Hochgerner_nIPC","Hochgerner_RGL",
+                                 "Shin_NSC",
+                                 "Wu_Nb",
+                                 "Wu_nIPC", "Wu_qNSC")
+
+
+# Create a dendrogram using hierarchical clustering
+dendrogram <- hclust(as.dist(1 - (similarity_matrix / max(similarity_matrix))))
+
+
+
+# Add color to the dendrogram branches based on clusters
+clusters <- cutree(dendrogram, k = 3)  
+
+# Define color palette for clusters
+cluster_colors <- c("red", "black", "green")
+
+# Assign colors to dendrogram branches
+dendrogram_colored <- color_branches(dendrogram, k = 3, col = cluster_colors)
+
+```
+
+#### Hierarchical clustering across the different NSC and NP populations 
+#### Figure 1 A
+
+</br>
+
+```{r Results dendrograms NSC NP, echo = FALSE}
+
+
+# Plot the colored dendrogram
+plot(dendrogram_colored, main = "Colored Dendrogram", ylab = "Distance")
+
+```
+
+</br>
+
+#### Upset plots of shared gene signatures across the different studies 
+#### Figure 1 B and 1 C and Supplementary Figure 1
+
+```{r Upset plots, echo = TRUE}
+
+#Load packages----
+library(UpSetR)
+library(ComplexHeatmap)
+library(ggplot2)
+library(ggpubr)
+library(svglite)
+library(ggplotify)
+library(openxlsx)
+
+#Load gene lists of NSC markers----
+Hochgerner_RGL <- readLines("Hochgerner_RGL.txt")
+Batiuk_AST4 <- readLines("Batiuk_AST4.txt")
+Artegiani_NSC <- readLines("Artegiani_NSC.txt")
+Bielefeld_A <- readLines("Bielefeld_A1.txt")
+Harris_NSC <- readLines("Harris_NSC.txt")
+Shin_NSC <- readLines("Shin_NSC.txt")
+Wu_NSC <- readLines("Wu_qNSC.txt")
+
+#UpsetPlot for common genes across NSC gene lists----
+list1 <- list( Hochgerner_RGL,
+               Batiuk_AST4,
+               Artegiani_NSC,
+               Bielefeld_A,
+               Harris_NSC,
+               Shin_NSC,
+               Wu_NSC
+               )
+matrix1 <- list_to_matrix(list1)
+colnames(matrix1) <- c("Hochgerner et al., 2020", "Batiuk et al., 2020" ,"Artegiani et al., 2017", "Bielefeld et al., 2024","Harris et al., 2021", "Shin et al., 2015", "Wu et al., 2025")
+
+#In order to see how often each gene is present in the datasets
+matrixSum1 <- matrix1
+matrixSum1<- cbind(matrixSum1, Sum = rowSums(matrixSum1))
+write.xlsx(matrixSum1, file = "2025-03-09_NSC_gene_signature.xlsx", rowNames = TRUE)
+
+# Create the UpSet plot
+m1 = make_comb_mat(matrix1)
+graph1 <- UpSet(t(m1[comb_degree(m1) >= 4]),
+    top_annotation = upset_top_annotation(t(m1[comb_degree(m1) >= 4]), add_numbers = TRUE),
+    right_annotation = upset_right_annotation(t(m1[comb_degree(m1) >= 4]), add_numbers = TRUE),
+    set_order = c("Hochgerner et al., 2020", "Batiuk et al., 2020" ,"Artegiani et al., 2017", "Bielefeld et al., 2024","Harris et al., 2021","Shin et al., 2015", "Wu et al., 2025"))
+
+
+#Load gene lists of NP markers----
+Hochgerner_nIPC <- readLines("Hochgerner_nIPC.txt")
+Wu_nIPC <- readLines("Wu_nIPC.txt")
+Bielefeld_RGL <- readLines("Bielefeld_RGL.txt")
+Harris_NSC_IPCs <- readLines("Harris_NSC_IPCs.txt")
+Bielefeld_NSC1 <- readLines("Bielefeld_NSC1.txt")
+Bielefeld_NSC2 <- readLines("Bielefeld_NSC2.txt")
+
+#Load gene lists of Neuroblast markers----
+Hochgerner_Nb <- readLines("Hochgerner_Nb.txt")
+Wu_Nb <- readLines("Wu_Nb.txt")
+Artegiani_NP <- readLines("Artegiani_NP.txt")
+Harris_Nb <- readLines("Harris_Nb.txt")
+
+
+#UpsetPlot for common genes across Neuroblast gene lists----
+list2 <- list( Hochgerner_Nb,
+               Wu_Nb,
+               Artegiani_NP,
+               Harris_Nb
+               )
+matrix2 <- list_to_matrix(list2)
+colnames(matrix2) <- c("Hochgerner et al., 2018","Wu et al., 2025", "Artegiani et al, 2017","Harris et al., 2021" )
+
+#In order to see how often each gene is present in the datasets
+matrixSum2 <- matrix2
+matrixSum2<- cbind(matrixSum2, Sum = rowSums(matrixSum2))
+write.xlsx(matrixSum2, file = "2025-02-21_Neuroblast_gene_signature.xlsx", rowNames = TRUE)
+
+m2 = make_comb_mat(matrix2)
+graph2 <- UpSet(t(m2[comb_degree(m2) >= 2]), 
+                top_annotation = upset_top_annotation(t(m2[comb_degree(m2) >= 2]), add_numbers = TRUE),
+                right_annotation = upset_right_annotation(t(m2[comb_degree(m2) >= 2]), add_numbers = TRUE),
+                set_order = c("Hochgerner et al., 2018","Wu et al., 2025", "Artegiani et al, 2017","Harris et al., 2021"))
+
+#UpsetPlot for common genes across NPs gene lists----
+list3 <- list( Hochgerner_nIPC,
+               Wu_nIPC,
+               Bielefeld_RGL,
+               Harris_NSC_IPCs,
+               Bielefeld_NSC1,
+               Bielefeld_NSC2
+               )
+matrix3 <- list_to_matrix(list3)
+colnames(matrix3) <- c("Hochgerner et al., 2018","Wu et al., 2025", "Bielefeld et al., 2024 (RGL)","Harris et al., 2021","Bielefeld et al., 2024 (NSC1)","Bielefeld et al., 2024 (NSC2)" )
+
+#In order to see how often each gene is present in the datasets
+matrixSum3 <- matrix3
+matrixSum3<- cbind(matrixSum3, Sum = rowSums(matrixSum3))
+write.xlsx(matrixSum3, file = "2025-02-21_NP_gene_signature.xlsx", rowNames = TRUE)
+write.xlsx(list(Sheet1 = matrixSum1, Sheet2 = matrixSum3, Sheet3 = matrixSum2), file = "2024-02-21_Gene_signatures.xlsx", rowNames = TRUE)
+
+m3 = make_comb_mat(matrix3)
+graph3 <- UpSet(t(m3[comb_degree(m3) >= 4]), 
+                top_annotation = upset_top_annotation(t(m3[comb_degree(m3) >= 4]), add_numbers = TRUE),
+                right_annotation = upset_right_annotation(t(m3[comb_degree(m3) >= 4]), add_numbers = TRUE),
+                set_order = c("Hochgerner et al., 2018","Wu et al., 2025", "Bielefeld et al., 2024 (RGL)","Harris et al., 2021","Bielefeld et al., 2024 (NSC1)","Bielefeld et al., 2024 (NSC2)"))
+
+
+
+```
+
+
+
+```{r Upset plots results, echo=FALSE }
+graph1_ggplot <- as.ggplot(graph1)
+graph2_ggplot <- as.ggplot(graph2)
+graph3_ggplot <- as.ggplot(graph3)
+print(graph1_ggplot)
+print(graph3_ggplot)
+print(graph2_ggplot)
+
+
+
+```
