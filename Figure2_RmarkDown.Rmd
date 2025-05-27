@@ -1,0 +1,173 @@
+---
+title: "Figure2"
+author: "Oliver Polzer"
+date: "2025-05-27"
+output: html_document
+---
+
+---
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE)
+```
+
+### 1. Background
+
+The following analysis was carried out based on two publicly available datasets  
+1.[Harris et al., 2021](https://doi.org/10.1016/j.stem.2021.01.003)  
+[Generation of the Seurat object from Harris et al.](https://github.com/harrislachlan/lifelong_stemcells/tree/main/markdown)  
+2.[Wu et al., 2025](https://doi.org/10.1038/s41593-024-01848-4)  
+[Seurat object from Wu et al.](https://github.com/JessbergerLab/AgingNeurogenesis_Transcriptomics)  
+
+In order to generate these figures the seurat object from Harris et al. needs to be generated (according to original markdown document, see link above) and the seurat object from Wu et al. can be directly downloaded from the link above.  
+
+This reproducible and dynamic report was created using Rmarkdown and the [Knitr package](https://yihui.name/knitr/), and summarizes the basic code and outputs (plots, tables, etc).  
+
+
+
+***
+### 2. Figure 2 B and D
+
+```{r Gene expression Harris et al., eval = FALSE}
+
+# Load packages----
+library(Seurat)
+library(dplyr)
+library(tidyverse)
+library(DT)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+
+# Load whole Harris dataset----
+#Please follow the steps from the original paper, once object is generated subsequent steps can be performed
+
+# Create your DotPlot | Figure 2 B ----
+# Genelist across all cell populations
+
+nsc_genes <- c("Fabp7","Hopx", "Dbi", "1500015O10Rik", "Gas1", "Id4",
+               "Naaa", "Thrsp", "Tnc","Aldoc","Ass1",
+               "Ckb","Cnn3","Ddah1","E330013P04Rik","Entpd2",
+               "Gpm6b","Itih3","Mfge8","Mlc1","Mmd2",
+               "Ndufc2","Slc14a1","Slc1a2","Slc1a3",
+               "Slc25a18","Sox9","Ascl1","Tmem47")
+
+dot_plot <- DotPlot(object = seurat_object.integrated, features = nsc_genes, cols = c("#99C0B8","#6F3D33"))
+
+#Save the plot as an SVG file with the specified dimensions
+ggsave("2025-02-20_dotplot_Harris_NSCgenes_all_cellpopulations.svg", plot = dot_plot, width = 250, height = 100 , units = "mm", device = "svg")
+
+# Whole neurogenic lineage + Astrocytes | Figure 2 C----
+# adjust the cluster identities based on the UMAP
+current.cluster.ids <- c("0","1","2","3","4","5","6","7","8","9","10","11","12", "14", "16", "17")
+new.cluster.ids <- c("NSC","Neuroblast","Astrocyte","Neuroblast","NSC/IPC","Neuroblast","NSC","Astrocyte","NSC/IPC","NSC/IPC","NSC","NSC/IPC","NSC", "NSC", "Neuroblast", "NSC")
+# current cluster names replaced with new names
+nsc_ipc.integrated@active.ident <- plyr::mapvalues(x = nsc_ipc.integrated@active.ident, from = current.cluster.ids, to = new.cluster.ids)
+#add to metadata 
+nsc_ipc.integrated <- AddMetaData(object = nsc_ipc.integrated, metadata = nsc_ipc.integrated@active.ident, col.name = "Cluster") 
+
+dimANSC<-DimPlot(nsc_ipc.integrated, reduction = "umap", cols = c("#66C7B1", "#FF7043","#D32F2F", "#2E7D32"),
+                 pt.size = 0.9)
+ggsave(filename = "2025-02-20_Harris_Astro_NSC_NP_clusters.svg", dimANSC, width = 6, height = 4, scale = 1)
+
+save.image(file="nsc_ipc_neuroblast_astro.RData")
+
+
+# List of genes to plot
+# 1500015O10Rik = Ecrg4 
+genes <- c("Hopx", "Aldoc", "Ascl1", "1500015O10Rik", "Tnc")
+
+
+# Loop over genes to create and save each feature plot
+for (gene in genes) {
+  # Create the feature plot for the gene
+  plot <- FeaturePlot(object = nsc_ipc.integrated, features = gene, reduction = "umap", 
+                      cols = c("#d4d4d4ff", "#c23737ff"), order = TRUE, 
+                      pt.size = 0.9, combine = TRUE, label.size = 0.5, min.cutoff = 0)
+  
+  # Save each plot as an SVG
+  ggsave(paste0("2025-02-20_",gene, "_feature_plot_Harris.svg"), plot = plot, width = 5, height = 4)
+}
+
+```
+
+### 2. Figure 2 B and D
+
+```{r Gene expression Wu et al., eval = FALSE}
+
+# Load packages----
+library(Seurat)
+library(dplyr)
+library(tidyverse)
+library(DT)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+
+# Load whole WU dataset----
+#Read seurat object from Wu et al.
+seurat_object <- readRDS("yourDirectory/seurat_Chromium_all.rds")
+
+# Plot UMAP
+Idents(seurat_object) <- "Celltype"
+DimPlot(seurat_object, reduction = "umap")
+
+# Create your DotPlot | Figure 2 B ----
+#Genelist across all cell populations
+nsc_genes <- c("Fabp7","Hopx", "Dbi", "Ecrg4", "Gas1", "Id4",
+               "Naaa", "Thrsp", "Tnc","Aldoc","Ass1",
+               "Ckb","Cnn3","Ddah1","E330013P04Rik","Entpd2",
+               "Gpm6b","Itih3","Mfge8","Mlc1","Mmd2",
+               "Ndufc2","Slc14a1","Slc1a2","Slc1a3",
+               "Slc25a18","Sox9","Ascl1","Tmem47")
+
+dot_plot <- DotPlot(object = seurat_object, features = nsc_genes, cols = c("#99C0B8","#6F3D33"))
+
+# Save the plot as an SVG file with the specified dimensions
+ggsave("2025-02-20_dotplot_wu_NSCgenes_all_cellpopulations.svg", plot = dot_plot, width = 250, height = 100 , units = "mm", device = "svg")
+
+
+# Whole neurogenic lineage + Astrocytes | Figure 2 D----
+
+Idents(seurat_object) <- "Celltype"
+seurat_NA <- subset(seurat_object, idents = c("Astrocyte","qNSC", "nIPC", "Neuroblast"))
+
+# Re-clustering
+DefaultAssay(seurat_NA) <- "RNA"
+seurat_NA <- NormalizeData(seurat_NA, normalization.method = "LogNormalize", scale.factor = 10000) %>% 
+  FindVariableFeatures(nfeatures = 5000) %>% 
+  ScaleData() %>%
+  RunPCA(npcs = 50, verbose = FALSE)
+seurat_NA <- RunUMAP(seurat_NA, reduction = "pca", dims = 1:12) %>% 
+  RunTSNE(reduction = "pca", dims = 1:12) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:12) %>% 
+  FindClusters(resolution = 1.0)
+
+my_levels <- c("Astrocyte","qNSC", "nIPC", "Neuroblast")
+seurat_NA$Celltype <- factor(x = seurat_NA$Celltype, levels = my_levels)
+Idents(seurat_NA) <- "Celltype"
+DimPlot(seurat_NA, reduction = "umap", cols = c("#D32F2F", "#66C7B1", "#2E7D32", "#FF7043"),
+        pt.size = 0.9)
+dimANSC<-DimPlot(seurat_NA, reduction = "umap", cols = c("#D32F2F", "#66C7B1", "#2E7D32", "#FF7043"),
+        pt.size = 0.9)
+ggsave(filename = "2025-02-20_Wu_Astro_NSC_NP_clusters.svg", dimANSC, width = 6, height = 4, scale = 1)
+
+
+# List of genes to plot
+genes <- c("Hopx", "Aldoc", "Ascl1", "Ecrg4", "Tnc")
+
+
+# Loop over genes to create and save each feature plot
+for (gene in genes) {
+  # Create the feature plot for the gene
+  plot <- FeaturePlot(object = seurat_NA, features = gene, reduction = "umap", 
+                      cols = c("#d4d4d4ff", "#c23737ff"), order = TRUE, 
+                      pt.size = 0.9, combine = TRUE, label.size = 0.5)
+  
+  # Save each plot as an SVG
+  ggsave(paste0("2025-02-20_",gene, "_feature_plot_wu.svg"), plot = plot, width = 5, height = 4)
+}
+
+```
