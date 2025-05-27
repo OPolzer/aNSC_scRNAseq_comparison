@@ -1,0 +1,192 @@
+---
+title: "Figure 4"
+author: "Oliver Polzer"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE)
+```
+
+### 1. Background
+
+The following figure was carried out based on the following publications  
+1.[Ibrayeva et al., 2021](https://doi.org/10.1016/j.stem.2021.03.018)  
+2.[Harris et al., 2021](https://doi.org/10.1016/j.stem.2021.01.003)    
+[Generation of the Seurat object from Harris et al.](https://github.com/harrislachlan/lifelong_stemcells/tree/main/markdown)    
+2.[Wu et al., 2025](https://doi.org/10.1038/s41593-024-01848-4)  
+[Seurat object from Wu et al.](https://github.com/JessbergerLab/AgingNeurogenesis_Transcriptomics)  
+
+In order to generate these figures the seurat object from Harris et al. needs to be generated (according to original markdown document, see link above) and the seurat object from Wu et al. can be directly downloaded from the link above.  
+
+This reproducible and dynamic report was created using Rmarkdown and the [Knitr package](https://yihui.name/knitr/), and summarizes the basic code and outputs (plots, tables, etc).  
+
+
+
+***
+### Figure 4 A
+
+GO terms from the original studies were extracted. The extracted GO terms from yound and old NSCs were then summarized using [REVIGO](http://revigo.irb.hr/)
+
+***
+### Figure 4 B
+
+```{r SenMayo, eval = FALSE}
+# Load whole Harris dataset----
+#Please follow the steps from the original paper, once object is generated subsequent steps can be performed
+load("nsc.RData")
+
+Idents(nsc.integrated) <- nsc.integrated$quiescence
+Idents(nsc.integrated) <- nsc.integrated$Age
+DimPlot(nsc.integrated, group.by = "Age", pt.size = 1.5, order = c("6mo", "2mo", "1mo"), cols = c("yellow2", "orange2", "purple4")) %>%
+  + theme_minimal() %>% 
+  + NoLegend() + labs(title = "")
+
+#Assign ModuleScore
+# Load the senescence gene lists
+senMayo <- read.csv("SenMayo.csv", header = FALSE)
+
+# Convert data frames to vectors
+senMayo <- as.vector(senMayo$V1)
+
+# Define the signatures list
+signatures <- list(
+  SenMayoList = senMayo
+)
+
+# Calculate module scores using AddModuleScore_UCell
+nsc.integrated <- AddModuleScore_UCell(nsc.integrated, features = signatures, name = "Senescence_Score")
+
+seurat.object <- AddModuleScore_UCell(nsc.integrated, features = signatures, name = NULL)
+
+#Visualize module scores using FeaturePlot
+FeaturePlot(seurat.object, pt.size = 1, min.cutoff = 0.04 , reduction = "umap", features = names(signatures))
+
+```
+
+
+
+***
+### Figure 4 C and Supplementary figure 2
+
+```{r Cellchat, eval = FALSE}
+library(CellChat)
+library(Seurat)
+library(dplyr)
+library(gridExtra)
+library(ComplexHeatmap)
+
+#Load Wu seurat object
+seurat_object <- readRDS("C:/Users/LucassenEDU/Desktop/Wu et al/Wu_analysis/seurat_Chromium_all.rds")
+Idents(seurat_object) <- "Celltype"
+
+
+#Split by age and create CellChat object (Skip this if you already have the objects)----
+
+# Step 1: Split Seurat object by Age
+seurat_young <- subset(seurat_object, subset = Age == "Young")
+seurat_middle <- subset(seurat_object, subset = Age == "Middle")
+seurat_old <- subset(seurat_object, subset = Age == "Old")
+
+# Step 2: Create CellChat objects for each age group
+cellchat_young <- createCellChat(object = seurat_young, group.by = "ident", assay = "RNA")
+cellchat_middle <- createCellChat(object = seurat_middle, group.by = "ident", assay = "RNA")
+cellchat_old <- createCellChat(object = seurat_old, group.by = "ident", assay = "RNA")
+
+# Step 3: Load and assign the CellChat database
+CellChatDB <- CellChatDB.mouse  
+CellChatDB.use <- subsetDB(CellChatDB)  
+
+cellchat_young@DB <- CellChatDB.use
+cellchat_middle@DB <- CellChatDB.use
+cellchat_old@DB <- CellChatDB.use
+
+# Step 4: Subset expression data to reduce computation
+cellchat_young <- subsetData(cellchat_young)
+cellchat_middle <- subsetData(cellchat_middle)
+cellchat_old <- subsetData(cellchat_old)
+
+# Step 5: Identify overexpressed genes and interactions
+cellchat_young <- identifyOverExpressedGenes(cellchat_young)
+cellchat_young <- identifyOverExpressedInteractions(cellchat_young)
+
+cellchat_middle <- identifyOverExpressedGenes(cellchat_middle)
+cellchat_middle <- identifyOverExpressedInteractions(cellchat_middle)
+
+cellchat_old <- identifyOverExpressedGenes(cellchat_old)
+cellchat_old <- identifyOverExpressedInteractions(cellchat_old)
+
+# Step 6: Compute communication probability
+cellchat_young <- computeCommunProb(cellchat_young, type = "triMean")
+cellchat_middle <- computeCommunProb(cellchat_middle, type = "triMean")
+cellchat_old <- computeCommunProb(cellchat_old, type = "triMean")
+
+# Step 7: Compute the cell-cell communication at a signaling pathway level
+cellchat_young <- computeCommunProbPathway(cellchat_young)
+cellchat_middle <- computeCommunProbPathway(cellchat_middle)
+cellchat_old <- computeCommunProbPathway(cellchat_old)
+
+cellchat_young <- aggregateNet(cellchat_young)
+cellchat_middle <- aggregateNet(cellchat_middle)
+cellchat_old <- aggregateNet(cellchat_old)
+
+saveRDS(cellchat_young, file = "CellChat_Wu_Young.rds")
+saveRDS(cellchat_middle, file = "CellChat_Wu_Middle.rds")
+saveRDS(cellchat_old, file = "CellChat_Wu_Old.rds")
+
+
+#Only look at pairwise comparison between Young and Old----
+
+# Define the list of CellChat objects
+cellchat_list_pairwise <- list(Young = cellchat_young, Old = cellchat_old)
+cellchat_merged_pairwise <- mergeCellChat(cellchat_list_pairwise, add.names = names(cellchat_list_pairwise))
+
+# Compare total number of interactions and interaction strength
+gg1 <- compareInteractions(cellchat_merged_pairwise, show.legend = FALSE, group = c(1,2))
+gg2 <- compareInteractions(cellchat_merged_pairwise, show.legend = FALSE, group = c(1,2), measure = "weight")
+plot1 <- gg1 + gg2
+ggsave("2025-03-13_total_interactions_comparison.svg", plot1)
+
+# Compare number of interactions and interaction strength among different cell populations
+svg(filename = "2025-03-13_Interaction_network.svg", width = 12, height = 6)
+par(mfrow = c(1,2), xpd=TRUE)
+netVisual_diffInteraction(cellchat_merged_pairwise, weight.scale = TRUE)
+dev.off()
+
+
+# Heatmap showing differential interactions among cell populations
+gg3 <- netVisual_heatmap(cellchat_merged_pairwise)
+gg4 <- netVisual_heatmap(cellchat_merged_pairwise, measure = "weight")
+
+# Save heatmaps as SVG
+svg("2025-03-13_heatmap_interactions.svg", width = 6, height = 4)
+draw(gg3)
+draw(gg4)
+dev.off()
+
+# Identify cell populations with significant changes in signaling
+num.link <- sapply(cellchat_list_pairwise, function(x) {rowSums(x@net$count) + colSums(x@net$count) - diag(x@net$count)})
+weight.MinMax <- c(min(num.link), max(num.link))
+
+gg <- list()
+for (i in 1:length(cellchat_list_pairwise)) {
+  gg[[i]] <- netAnalysis_signalingRole_scatter(cellchat_list_pairwise[[i]], title = names(cellchat_list_pairwise)[i], weight.MinMax = weight.MinMax)
+}
+plot3 <- patchwork::wrap_plots(plots = gg)
+ggsave("2025-03-13_signaling_role_analysis.svg", plot3)
+
+# Identify signaling changes of specific cell populations
+gg6 <- netAnalysis_signalingChanges_scatter(cellchat_merged_pairwise, idents.use = "qNSC")
+gg7 <- netAnalysis_signalingChanges_scatter(cellchat_merged_pairwise, idents.use = "nIPC")
+gg8 <- netAnalysis_signalingChanges_scatter(cellchat_merged_pairwise, idents.use = "Neuroblast")
+plot4 <- patchwork::wrap_plots(plots = list(gg6, gg7, gg8))
+ggsave("2025-03-13_signaling_changes_qNSC.svg", gg6)
+ggsave("2025-03-13_signaling_changes_nIPC.svg", gg7)
+ggsave("2025-03-13_signaling_changes_neuroblast.svg", gg8)
+
+
+```
